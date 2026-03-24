@@ -1,10 +1,13 @@
-using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using ProductInventoryAPI.Data;
 using ProductInventoryAPI.Models;
+using System.Security.Claims;
+
 namespace ProductInventoryAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ProductController : ControllerBase
@@ -14,13 +17,21 @@ namespace ProductInventoryAPI.Controllers
         {
             _context = context;
         }
-    
+        
         [HttpGet]
+        [Authorize(Roles = "Admin,Manager,Viewer")]
         public IActionResult GetAll()
-        {
-            var products = _context.Products.OrderBy(p=> p.Id).ToList();
-            return Ok(products);
-        }
+{
+        var userName = User.Identity?.Name ?? "unknown";
+        var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown";
+        var products = _context.Products.OrderBy(p => p.Id).ToList();
+
+        return Ok(new {
+        calledBy = userName,
+        callerRole = userRole,
+        data = products
+    });
+}
 
         [HttpGet("{id}")]
 
@@ -28,12 +39,13 @@ namespace ProductInventoryAPI.Controllers
         {
             try
             {
-                
                 if (id<=0)
                     return BadRequest("ID must be positive value");
                 var product = _context.Products.Find(id);
                 if (product == null)
                     return NotFound($"Product with ID {id} not found.");
+                if(product.StockQuantity==0)
+                    return Ok(new {message = "Product is out of stock", product});
                 return Ok(product);
             }
             catch (Exception ex)
@@ -41,6 +53,7 @@ namespace ProductInventoryAPI.Controllers
                 return StatusCode(500, "An error occured:" + ex.Message);
             }
         }
+        [Authorize(Roles = "Admin,Manager")]
         [HttpPost]
         public IActionResult AddProduct([FromBody] Product newProduct)
         {
@@ -58,11 +71,11 @@ namespace ProductInventoryAPI.Controllers
 
             _context.Products.Add(newProduct);
             _context.SaveChanges();
-            return Ok(newProduct);
-            }
+            return CreatedAtAction(nameof(GetProductById), new { id = newProduct.Id }, newProduct);
+        }
 
-
-
+        
+        [Authorize(Roles = "Admin,Manager")]
         [HttpPut("{id}")]
         public IActionResult UpdateProduct(int id, [FromBody] Product updateProduct)
         {
@@ -79,12 +92,14 @@ namespace ProductInventoryAPI.Controllers
             return Ok(product);
 
         }
+        [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]
         public IActionResult DeleteProduct(int id)
         {
             var product = _context.Products.Find(id);
-            if(product==null)
+            if (product == null)
                 return NotFound("Product not found.");
+
             _context.Products.Remove(product);
             _context.SaveChanges();
             return Ok("Product deleted successfully.");
@@ -107,6 +122,8 @@ namespace ProductInventoryAPI.Controllers
                 : _context.Products.OrderBy(p => p.Price).ToList();
             return Ok(product);
         }
+    
+
 
     }
     
